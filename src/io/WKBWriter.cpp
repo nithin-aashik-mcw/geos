@@ -387,18 +387,20 @@ WKBWriter::writeCoordinate(const CoordinateSequence& cs, std::size_t idx)
     CoordinateXYZM coord(DoubleNotANumber, DoubleNotANumber, DoubleNotANumber, DoubleNotANumber);
     cs.getAt(idx, coord);
 
-    ByteOrderValues::putDouble(coord.x, buf, byteOrder);
-    outStream->write(reinterpret_cast<char*>(buf), 8);
-    ByteOrderValues::putDouble(coord.y, buf, byteOrder);
-    outStream->write(reinterpret_cast<char*>(buf), 8);
+    unsigned char _buf[32];
+    size_t _size = 16;
+
+    ByteOrderValues::putDouble(coord.x, _buf, byteOrder);
+    ByteOrderValues::putDouble(coord.y, _buf + 8, byteOrder);
     if(outputOrdinates.hasZ()) {
-        ByteOrderValues::putDouble(coord.z, buf, byteOrder);
-        outStream->write(reinterpret_cast<char*>(buf), 8);
+        ByteOrderValues::putDouble(coord.z, _buf + _size, byteOrder);
+        _size += 8;
     }
     if(outputOrdinates.hasM()) {
-        ByteOrderValues::putDouble(coord.m, buf, byteOrder);
-        outStream->write(reinterpret_cast<char*>(buf), 8);
+        ByteOrderValues::putDouble(coord.m, _buf + _size, byteOrder);
+        _size += 8;
     }
+    outStream->write(reinterpret_cast<char*>(_buf), _size);
 }
 
 OrdinateSet
