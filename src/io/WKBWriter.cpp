@@ -388,7 +388,7 @@ WKBWriter::writeCoordinate(const CoordinateSequence& cs, std::size_t idx)
     cs.getAt(idx, coord);
 
     unsigned char _buf[32];
-    size_t _size = 16;
+    std::streamsize _size = 16;
 
     ByteOrderValues::putDouble(coord.x, _buf, byteOrder);
     ByteOrderValues::putDouble(coord.y, _buf + 8, byteOrder);
