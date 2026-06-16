@@ -623,10 +623,15 @@ public:
      */
     bool intersects(const Envelope* other) const
     {
-        return std::islessequal(other->minx, maxx) &&
-               std::isgreaterequal(other->maxx, minx) &&
-               std::islessequal(other->miny, maxy) &&
-               std::isgreaterequal(other->maxy, miny);
+        if (other->isNull() || isNull())
+        {
+            return false;
+        }
+        
+        return (other->minx <= maxx) &&
+               (other->maxx >= minx) &&
+               (other->miny <= maxy) &&
+               (other->maxy >= miny);
     }
 
     bool intersects(const Envelope& other) const
