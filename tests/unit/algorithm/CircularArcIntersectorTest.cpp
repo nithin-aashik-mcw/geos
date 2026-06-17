@@ -1692,6 +1692,66 @@ void object::test<84>()
     ensure_equals(cai.getPoint(0), XY{31.8, 68.2});
 }
 
+template<>
+template<>
+void object::test<85>()
+{
+    set_test_name("computed test points are independent of argument order");
+
+    auto arc0 = CircularArc::create(XY{0, 5}, XY{3, 4}, XY{4, 3});
+    auto arc1 = CircularArc::create(XY{3, 5}, XY{4, 4}, XY{2, 3});
+
+    CircularArcIntersector cai1;
+    cai1.intersects(arc0, arc1);
+    ensure_equals(cai1.getNumPoints(), 1u);
+
+    CircularArcIntersector cai2;
+    cai2.intersects(arc1, arc0);
+    ensure_equals(cai2.getNumPoints(), 1u);
+
+    ensure_equals(cai1.getPoint(0), cai2.getPoint(0));
+}
+
+template<>
+template<>
+void object::test<86>()
+{
+    // arc/segment with single endpoint intersection
+
+    CircularArcIntersector cai;
+
+    auto arc = CircularArc::create(XY{-0.84333168960872817, -0.1241204385865409}, XY{-0.96461319189094762, -0.20729352391791989}, XY{-1.1087328289561522, -0.23655946199558511});
+
+    CoordinateSequence seg{
+     XY{-1.277492733105557, 0.28999497465537871}, XY{-0.84333168960872817, -0.1241204385865409}};
+
+    cai.intersects(arc, seg, 0, 1, false);
+
+    ensure_equals(cai.getNumPoints(), 1u);
+    // ensure endpoint intersection is represented exactly, not with distance() == 0
+    ensure_equals(cai.getPoint(0), seg.getAt<CoordinateXY>(1));
+}
+
+
+template<>
+template<>
+void object::test<87>()
+{
+    set_test_name("arc intersected with itself yields arc with identical endpoints");
+
+    CircularArcIntersector cai;
+
+    auto arc = CircularArc::create(XY{0, 0}, XY{2, 0}, XY{2, 1});
+
+    cai.intersects(arc, arc);
+
+    ensure_equals(cai.getNumArcs(), 1u);
+
+    const CircularArc& arcOut = cai.getArc(0);
+
+    ensure_equals(arc.p0(), arcOut.p0());
+    ensure_equals(arc.p2(), arcOut.p2());
+}
 
 // TODO: check Z values of arc result centerpoints
 // TODO: add tests for seg/seg

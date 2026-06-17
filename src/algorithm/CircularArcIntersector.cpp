@@ -101,6 +101,23 @@ CircularArcIntersector::hasIntersection(const geom::CoordinateXY &p) const {
     return false;
 }
 
+static CoordinateXY&
+closestPoint(CoordinateXY& p0, CoordinateXY& p1, int n, const CoordinateXY& q)
+{
+    if (n < 2) {
+        return p0;
+    }
+
+    const double d0 = p0.distance(q);
+    const double d1 = p1.distance(q);
+
+    if (d0 < d1) {
+        return p0;
+    }
+
+    return p1;
+}
+
 void
 CircularArcIntersector::intersects(const CircularArc& arc, const CoordinateSequence& seq, std::size_t segPos0, std::size_t segPos1, bool useSegEndpoints)
 {
@@ -117,14 +134,35 @@ CircularArcIntersector::intersects(const CircularArc& arc, const CoordinateSeque
     const CoordinateXY& c = arc.getCenter();
     const double r = arc.getRadius();
 
-    CoordinateXYZM isect0, isect1;
-    auto n = CircularArcs::circleIntersectsSegment(c, r, seq.getAt<CoordinateXY>(segPos0), seq.getAt<CoordinateXY>(segPos1), isect0, isect1);
+    CoordinateXY isect0, isect1;
+    const auto nPointsIntersectingLine = CircularArcs::circleIntersectsLine(c, r, seq.getAt<CoordinateXY>(segPos0), seq.getAt<CoordinateXY>(segPos1), isect0, isect1);
 
-    if (n > 0 && arc.containsPointOnCircle(isect0)) {
+    if (nPointsIntersectingLine == 0) {
+        result = NO_INTERSECTION;
+        return;
+    }
+
+    // Check for exact endpoint-endpoint intersections
+    // If found, replace the computed intersection points with an exact endpoint
+    const CoordinateXY& ap0 = arc.p0<CoordinateXY>();
+    const CoordinateXY& ap2 = arc.p2<CoordinateXY>();
+    const CoordinateXY& bp0 = seq.getAt<CoordinateXY>(segPos0);
+    const CoordinateXY& bp1 = seq.getAt<CoordinateXY>(segPos1);
+
+    if (ap0 == bp0 || ap0 == bp1) {
+        closestPoint(isect0, isect1, nPointsIntersectingLine, ap0) = ap0;
+    }
+    if (ap2 == bp0 || ap2 == bp1) {
+        closestPoint(isect0, isect1, nPointsIntersectingLine, ap2) = ap2;
+    }
+
+    Envelope segEnv(bp0, bp1);
+
+    if (nPointsIntersectingLine > 0 && segEnv.contains(isect0) && arc.containsPointOnCircle(isect0)) {
         addArcSegmentIntersectionPoint(isect0, arc, seq, segPos0, segPos1, useSegEndpoints);
     }
 
-    if (n > 1  && arc.containsPointOnCircle(isect1)) {
+    if (nPointsIntersectingLine > 1 && segEnv.contains(isect1) && arc.containsPointOnCircle(isect1)) {
         addArcSegmentIntersectionPoint(isect1, arc, seq, segPos0, segPos1, useSegEndpoints);
     }
 
@@ -163,11 +201,15 @@ CircularArcIntersector::intersects(const CircularArc& arc1, const CircularArc& a
 
     reset();
 
-    const auto& c1 = arc1.getCenter();
-    const auto& c2 = arc2.getCenter();
+    // Normalize arguments such that the computed intersection points do not depend
+    // on the order of the input arcs
+    const bool swapArgs = arc1.getCenter().compareTo(arc2.getCenter()) > 0;
 
-    const auto r1 = arc1.getRadius();
-    const auto r2 = arc2.getRadius();
+    const auto c1 = swapArgs ? arc2.getCenter() : arc1.getCenter();
+    const auto c2 = swapArgs ? arc1.getCenter() : arc2.getCenter();
+
+    const auto r1 = swapArgs ? arc2.getRadius() : arc1.getRadius();
+    const auto r2 = swapArgs ? arc1.getRadius() : arc2.getRadius();
 
     const auto d = c1.distance(c2);
 
@@ -193,55 +235,39 @@ CircularArcIntersector::intersects(const CircularArc& arc1, const CircularArc& a
     if (a == 0 || (d == 0 && r1 == r2)) {
         computeCocircularIntersection(arc1, arc2);
     } else {
-        // Explicitly add endpoint intersections that may be missed or inexactly computed.
-        if (arc1.p0().equals2D(arc2.p0()) && !hasIntersection(arc1.p0())) {
-            addArcArcIntersectionPoint(arc1.p0(), arc1, arc2);
+        // Compute interior intersection points.
+        const double dx = c2.x-c1.x;
+        const double dy = c2.y-c1.y;
+
+        // point where a line between the two circle center points intersects
+        // the radical line
+        CoordinateXY p{c1.x + a* dx/d, c1.y+a* dy/d};
+
+        // distance from p to the intersection points
+        const double h = std::sqrt(r1*r1 - a*a);
+
+        CoordinateXY isect0{p.x + h* dy/d, p.y - h* dx/d };
+        CoordinateXY isect1{p.x - h* dy/d, p.y + h* dx/d };
+
+        // Check to see if computed intersection points are inexact versions of an endpoint intersection
+        const CoordinateXY& ap0 = arc1.p0();
+        const CoordinateXY& ap2 = arc1.p2();
+        const CoordinateXY& bp0 = arc2.p0();
+        const CoordinateXY& bp2 = arc2.p2();
+
+        if (ap0 == bp0 || ap0 == bp2) {
+            closestPoint(isect0, isect1, 2, ap0) = ap0;
         }
-        if (arc1.p0().equals2D(arc2.p2()) && !hasIntersection(arc1.p0())) {
-            addArcArcIntersectionPoint(arc1.p0(), arc1, arc2);
-        }
-        if (arc1.p2().equals2D(arc2.p0()) && !hasIntersection(arc1.p2())) {
-            addArcArcIntersectionPoint(arc1.p2(), arc1, arc2);
-        }
-        if (arc1.p2().equals2D(arc2.p2()) && !hasIntersection(arc1.p2())) {
-            addArcArcIntersectionPoint(arc1.p2(), arc1, arc2);
+        if (ap2 == bp0 || ap2 == bp2) {
+            closestPoint(isect0, isect1, 2, ap2) = ap2;
         }
 
-        if (nPt < 2) {
-            // Compute interior intersection points.
-            const double dx = c2.x-c1.x;
-            const double dy = c2.y-c1.y;
+        if (arc1.containsPointOnCircle(isect0) && arc2.containsPointOnCircle(isect0)) {
+            addArcArcIntersectionPoint(isect0, arc1, arc2);
+        }
 
-            // point where a line between the two circle center points intersects
-            // the radical line
-            CoordinateXY p{c1.x + a* dx/d, c1.y+a* dy/d};
-
-            // distance from p to the intersection points
-            const double h = std::sqrt(r1*r1 - a*a);
-
-            CoordinateXY isect0{p.x + h* dy/d, p.y - h* dx/d };
-            CoordinateXY isect1{p.x - h* dy/d, p.y + h* dx/d };
-
-            // One of the computed intersection points may be an inexact version of an endpoint.
-            // If we already have an endpoint intersection, we need to process the farther-away
-            // computed point first.
-            if (nPt == 1 && intPt[0].distance(isect0) < intPt[0].distance(isect1)) {
-                std::swap(isect0, isect1);
-            }
-
-            for (const CoordinateXY& computedIntPt : {isect0, isect1}) {
-                if (nPt > 0 && computedIntPt.equals2D(intPt[0])) {
-                    continue;
-                }
-
-                if (nPt > 1) {
-                    continue;
-                }
-
-                if (arc1.containsPointOnCircle(computedIntPt) && arc2.containsPointOnCircle(computedIntPt)) {
-                    addArcArcIntersectionPoint(computedIntPt, arc1, arc2);
-                }
-            }
+        if (isect1 != isect0 && arc1.containsPointOnCircle(isect1) && arc2.containsPointOnCircle(isect1)) {
+            addArcArcIntersectionPoint(isect1, arc1, arc2);
         }
     }
 
@@ -401,38 +427,46 @@ CircularArcIntersector::addCocircularIntersection(double startAngle, double endA
     CoordinateXYZM computedMidPt(CircularArcs::createPoint(center, radius, theta1));
     CoordinateXYZM computedEndPt(CircularArcs::createPoint(center, radius, endAngle));
 
-    if (precisionModel) {
-        precisionModel->makePrecise(computedStartPt);
-        precisionModel->makePrecise(computedMidPt);
-        precisionModel->makePrecise(computedEndPt);
-    }
-
     // Check to see if the endpoints of the intersection match the endpoints of either of
     // the input arcs. Use angles for the check to avoid missing an endpoint intersection from
     // inaccuracy in the point construction.
-    if (startAngle == arc1.theta0()) {
+    if (startAngle == Angle::normalizePositive(arc1.theta0())) {
+        computedStartPt = arc1.p0();
         setFromEndpoint(computedStartPt, arc1, 0);
-    } else if (startAngle == arc1.theta2()) {
+    } else if (startAngle == Angle::normalizePositive(arc1.theta2())) {
+        computedStartPt = arc1.p2();
         setFromEndpoint(computedStartPt, arc1, 2);
-    } else if (startAngle == arc2.theta0()) {
+    } else if (startAngle == Angle::normalizePositive(arc2.theta0())) {
+        computedStartPt = arc2.p0();
         setFromEndpoint(computedStartPt, arc2, 0);
-    } else if (startAngle == arc2.theta2()) {
+    } else if (startAngle == Angle::normalizePositive(arc2.theta2())) {
+        computedStartPt = arc2.p2();
         setFromEndpoint(computedStartPt, arc2, 2);
     }
 
-    if (endAngle == arc1.theta0()) {
+    if (endAngle == Angle::normalizePositive(arc1.theta0())) {
+        computedEndPt = arc1.p0();
         setFromEndpoint(computedEndPt, arc1, 0);
-    } else if (endAngle == arc1.theta2()) {
+    } else if (endAngle == Angle::normalizePositive(arc1.theta2())) {
+        computedEndPt = arc1.p2();
         setFromEndpoint(computedEndPt, arc1, 2);
-    } else if (endAngle == arc2.theta0()) {
+    } else if (endAngle == Angle::normalizePositive(arc2.theta0())) {
+        computedEndPt = arc2.p0();
         setFromEndpoint(computedEndPt, arc2, 0);
-    } else if (endAngle == arc2.theta2()) {
+    } else if (endAngle == Angle::normalizePositive(arc2.theta2())) {
+        computedEndPt = arc2.p2();
         setFromEndpoint(computedEndPt, arc2, 2);
     }
 
     interpolateZM(arc1, arc2, computedStartPt);
     interpolateZM(arc1, arc2, computedMidPt);
     interpolateZM(arc1, arc2, computedEndPt);
+
+    if (precisionModel) {
+        precisionModel->makePrecise(computedStartPt);
+        precisionModel->makePrecise(computedMidPt);
+        precisionModel->makePrecise(computedEndPt);
+    }
 
     auto seq = std::make_unique<CoordinateSequence>(3, constructZ, constructM);
     seq->setAt(computedStartPt, 0);
