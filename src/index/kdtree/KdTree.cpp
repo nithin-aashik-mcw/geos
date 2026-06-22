@@ -27,26 +27,26 @@ namespace kdtree { // geos.index.kdtree
 
 
 /*public static*/
-std::unique_ptr<std::vector<Coordinate>>
-KdTree::toCoordinates(std::vector<KdNode*>& kdnodes)
+std::vector<Coordinate>
+KdTree::toCoordinates(const std::vector<KdNode*>& kdnodes)
 {
     return toCoordinates(kdnodes, false);
 }
 
 /*public static*/
-std::unique_ptr<std::vector<Coordinate>>
-KdTree::toCoordinates(std::vector<KdNode*>& kdnodes, bool includeRepeated)
+std::vector<Coordinate>
+KdTree::toCoordinates(const std::vector<KdNode*>& kdnodes, bool includeRepeated)
 {
-    std::unique_ptr<std::vector<Coordinate>> coord(new std::vector<Coordinate>);
+    std::vector<Coordinate> coord;
     for (auto node: kdnodes) {
         std::size_t count = includeRepeated ? node->getCount() : 1;
         for (std::size_t i = 0; i < count; i++) {
-            coord->emplace_back(node->getCoordinate());
+            coord.emplace_back(node->getCoordinate());
         }
     }
     if (!includeRepeated) {
         // Remove duplicate Coordinates from coordList
-        coord->erase(std::unique(coord->begin(), coord->end()), coord->end());
+        coord.erase(std::unique(coord.begin(), coord.end()), coord.end());
     }
     return coord;
 }
@@ -153,7 +153,7 @@ KdTree::insertExact(const geom::Coordinate& p, void* data)
 void
 KdTree::queryNode(KdNode* currentNode, const geom::Envelope& queryEnv, bool odd, KdNodeVisitor& visitor)
 {
-    // Non recursive formulation of in-order traversal from
+    // Non-recursive formulation of in-order traversal from
     // http://web.cs.wpi.edu/~cs2005/common/iterative.inorder
     // Otherwise we may blow up the stack
     // See https://github.com/qgis/QGIS/issues/45226
@@ -175,7 +175,7 @@ KdTree::queryNode(KdNode* currentNode, const geom::Envelope& queryEnv, bool odd,
             }
             bool searchLeft = min < discriminant;
 
-            activeNodes.emplace(Pair(currentNode, odd));
+            activeNodes.emplace(currentNode, odd);
 
             // search is computed via in-order traversal
             KdNode* leftNode = nullptr;
@@ -226,6 +226,11 @@ KdTree::queryNode(KdNode* currentNode, const geom::Envelope& queryEnv, bool odd,
     }
 }
 
+#if defined(_MSC_VER) && _MSC_FULL_VER > 195035734
+// Avoid segfault with MSVC 19.51.36246.0
+// See https://github.com/libgeos/geos/issues/1449
+#pragma optimize("", off)
+#endif
 /*private*/
 KdNode*
 KdTree::queryNodePoint(KdNode* currentNode, const geom::Coordinate& queryPt, bool odd)
@@ -257,7 +262,9 @@ KdTree::queryNodePoint(KdNode* currentNode, const geom::Coordinate& queryPt, boo
     }
     return nullptr;
 }
-
+#if defined(_MSC_VER) && _MSC_FULL_VER > 195035734
+#pragma optimize("", on)
+#endif
 
 /*public*/
 void
@@ -267,11 +274,11 @@ KdTree::query(const geom::Envelope& queryEnv, KdNodeVisitor& visitor)
 }
 
 /*public*/
-std::unique_ptr<std::vector<KdNode*>>
+std::vector<KdNode*>
 KdTree::query(const geom::Envelope& queryEnv)
 {
-    std::unique_ptr<std::vector<KdNode*>> result(new std::vector<KdNode*>);
-    query(queryEnv, *result);
+    std::vector<KdNode*> result;
+    query(queryEnv, result);
     return result;
 }
 
